@@ -10,5 +10,4 @@ runTokenizer input = do
 
 main :: IO ()
 main = do
-  runTokenizer " 1 2 abc if "
-  runTokenizer " "
+  runTokenizer " 0b10'10'10 0X2'A 0x2a 052 4'2 asd ewr213423___324 friend char xor "
