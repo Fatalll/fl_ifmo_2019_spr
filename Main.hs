@@ -11,4 +11,4 @@ runTokenizer input = do
 main :: IO ()
 main = do
   runTokenizer " 1 2 abc if "
-  runTokenizer " "
+  runTokenizer "     0x123  0b1'0'0'0 float    friend  asfdaSDASD33 SADF_SAD3 _err"

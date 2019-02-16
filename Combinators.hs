@@ -1,9 +1,32 @@
 module Combinators where
 
-import Prelude hiding (fail, fmap)
+import qualified Prelude
+import Prelude hiding (fail, fmap, (<*>), (>>=))
+
+data Trie a = Trie { following :: [(a, Trie a)], isWord :: Bool }
+
+insert :: String -> Trie Char -> Trie Char
+insert (c : word) trie = case lookup c $ following trie of
+  Just _ -> Trie (update <$> following trie) (isWord trie) where
+    update (c', t) = if c == c' then (c, insert word t)
+                     else (c', t)
+  _ -> Trie ((c, insert word (Trie [] False)) : following trie) (isWord trie)
+insert _ trie = Trie (following trie) True
 
 -- Parsing result is some payload and a suffix of the input which is yet to be parsed
 newtype Parser str ok = Parser { runParser :: str -> Maybe (str, ok) }
+
+instance Functor (Parser s) where
+  fmap = fmap
+
+instance Applicative (Parser s) where
+  pure = success
+  (<*>) = (<*>)
+
+instance Monad (Parser s) where
+  return = success
+  (>>=) = (>>=)
+  fail = const fail
 
 -- Parser which always succeedes consuming no input
 success :: ok -> Parser str ok
@@ -25,15 +48,28 @@ p <|> q = Parser $ \s ->
 -- If the first does not succeed then the second one is never tried
 -- The result is collected into a pair
 seq :: Parser str a -> Parser str b -> Parser str (a, b)
-p `seq` q = undefined
+p `seq` q = Parser $ \s ->
+  case runParser p s of
+    Just (s', p_result) -> case runParser q s' of
+      Just (s'', q_result) -> Just (s'', (p_result, q_result))
+      _ -> Nothing
+    _ -> Nothing
 
 -- Monadic sequence combinator
 (>>=) :: Parser str a -> (a -> Parser str b) -> Parser str b
-p >>= q = undefined
+p >>= q = Parser $ \s ->
+  case runParser p s of
+    Just (s', result) -> (runParser $ q result) s'
+    _ -> Nothing
 
 -- Applicative sequence combinator
 (<*>) :: Parser str (a -> b) -> Parser str a -> Parser str b
-p <*> q = undefined
+p <*> q = Parser $ \s ->
+  case runParser p s of
+    Just (s', f) -> case runParser q s' of
+      Just (s'', result) -> Just (s'', f result)
+      _ -> Nothing
+    _ -> Nothing
 
 -- Applies a function to the parsing result, if parser succeedes
 fmap :: (a -> b) -> Parser str a -> Parser str b
@@ -44,15 +80,34 @@ fmap f p = Parser $ \s ->
 
 -- Applies a parser once or more times
 some :: Parser str a -> Parser str [a]
-some p = undefined
+some p = Parser $ \s ->
+  case runParser p s of
+    Just (s', r) -> case (runParser $ some p) s' of
+      Just (s'', rs) -> Just (s'', r : rs)
+      _ -> Just (s', [r])
+    _ -> Nothing
 
 -- Applies a parser zero or more times
 many :: Parser str a -> Parser str [a]
-many p = undefined
+many p = Parser $ \s ->
+  case runParser p s of
+    Just (s', r) -> case (runParser $ many p) s' of
+      Just (s'', rs) -> Just (s'', r : rs)
+      _ -> Just (s', [r])
+    _ -> Just (s, [])
 
--- Parses keywords 
+-- Parses keywords
 keywords :: [String] -> Parser String String
-keywords kws = undefined
+keywords kws = Parser $ \s ->
+  next s trie [] where
+    trie = foldr insert (Trie [] False) kws
+    next input@(' ' : _) (Trie _ True) ok = Just (input, ok)
+    next (' ' : _) (Trie _ False) ok = Nothing
+    next (c : str) (Trie f_ing _) ok = case lookup c f_ing of
+      Just t -> next str t (ok ++ [c])
+      _ -> Nothing
+    next [] (Trie _ True) ok = Just ([], ok)
+    next [] _ _ = Nothing
 
 -- Checks if the first element of the input is the given token
 token :: Eq token => token -> Parser [token] token
@@ -61,6 +116,24 @@ token t = Parser $ \s ->
     (t' : s') | t == t' -> Just (s', t)
     _ -> Nothing
 
+satisfy :: (token -> Bool) -> Parser [token] token
+satisfy f = Parser $ \s ->
+  case s of
+    (t : s') | f t -> Just (s', t)
+    _ -> Nothing
+
 -- Checks if the first character of the string is the one given
 char :: Char -> Parser String Char
 char = token
+
+stringEof :: Parser String Char
+stringEof = Parser $ \s ->
+  case s of
+    [] -> Just ([], '\0')
+    _  -> Nothing
+
+zeroOne :: Eq token => token -> Parser [token] token
+zeroOne t = Parser $ \s ->
+  case s of
+    (t' : s') | t == t' -> Just (s', t)
+    _ -> Just (s, t)
