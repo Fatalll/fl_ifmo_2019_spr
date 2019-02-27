@@ -1,6 +1,7 @@
 module Combinators where
 
 import qualified Prelude
+import Data.Char
 import Prelude hiding (fail, fmap, (<*>), (>>=))
 
 data Trie a = Trie { following :: [(a, Trie a)], isWord :: Bool }
@@ -137,3 +138,35 @@ zeroOne t = Parser $ \s ->
   case s of
     (t' : s') | t == t' -> Just (s', t)
     _ -> Just (s, t)
+
+try :: Parser String a -> Parser String (Maybe a)
+try p = fmap Just p <|> success Nothing
+
+keywords_satisfy :: [String] -> (Char -> Bool) -> Parser String String
+keywords_satisfy kws p = Parser $ \s ->
+  next s trie [] where
+    trie = foldr insert (Trie [] False) kws
+    next input@(c : str) (Trie f_ing s) ok
+            | p c = if s then Just (input, ok) else Nothing
+            | otherwise = case lookup c f_ing of
+                Just t -> next str t (ok ++ [c])
+                _ -> Nothing
+    next [] (Trie _ True) ok = Just ([], ok)
+    next [] _ _ = Nothing
+
+parseList :: Parser String el -> Parser String d -> Parser String lbr
+  -> Parser String rbr -> (Int -> Bool) -> Parser String [el]
+parseList el delim lbr rbr p = do
+  let skipSpaces = many $ satisfy isSpace
+  skipSpaces
+  lbr
+  skipSpaces
+  first <- try el
+  skipSpaces
+
+  case first of
+    Nothing -> return []
+    Just v -> do
+      elms <- many $ (delim >> skipSpaces) *> el <* skipSpaces
+      rbr
+      if p $ length elms + 1 then return (v : elms) else fail
