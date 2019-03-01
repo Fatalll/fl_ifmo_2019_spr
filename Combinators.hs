@@ -165,7 +165,9 @@ parseList el delim lbr rbr p = do
   skipSpaces
 
   case first of
-    Nothing -> return []
+    Nothing -> do
+      rbr
+      return []
     Just v -> do
       elms <- many $ (delim >> skipSpaces) *> el <* skipSpaces
       rbr
