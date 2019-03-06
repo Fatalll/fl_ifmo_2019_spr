@@ -53,9 +53,9 @@ parserAutomaton = do
       then if elem end states;
         then if elem sigma alphabet;
           then return ((begin, sigma), Just end);
-          else Combinators.fail;
-        else Combinators.fail;
-      else Combinators.fail;
+          else Combinators.fail "Sigma is not in the alphabet";
+        else Combinators.fail "End state is not in the states";
+      else Combinators.fail "Begin state is not in the states";
   }
 
   delts <- parseList triplets (char ',') (char '<') (char '>') (>= 0)
@@ -72,7 +72,9 @@ parserAutomaton = do
 -- * Delta function is defined on not-a-state or not-a-symbol-from-sigma
 -- Pick appropriate types for s and q
 parseAutomaton :: String -> Maybe (Automaton String String)
-parseAutomaton input = snd <$> (runParser $ parserAutomaton) input
+parseAutomaton input = case runParser parserAutomaton input of
+    Left e -> Nothing
+    Right (_, a) -> Just a
 
 test = parseAutomaton "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(2,b,3),(3,c,1)>"
 test1 = parseAutomaton "<aa, bb, cc> <stone, sttwo> <stone> <sttwo> <(stone, ccc, sttwo), (sttwo, bb, stone)>"
