@@ -1,35 +1,42 @@
 module Automaton where
 
 import           Data.Char
-import qualified Data.Map.Lazy as Maps
-import qualified Data.MultiMap as MultiMap
-import qualified Data.Set      as Set 
+import           Data.Maybe
+import           Data.MultiMap (MultiMap, fromList, keys, numKeys, numValues,
+                                toList)
+import qualified Data.Set      as Set
 
 import           Combinators
 
 type Set = Set.Set
 
-type Map = Maps.Map
-
-data Automaton s q = Automaton 
+data Automaton s q = Automaton
   { sigma     :: Set s
   , states    :: Set q
   , initState :: q
   , termState :: Set q
-  , delta     :: Map (q, s) (Maybe q)
+  , epsilon   :: s
+  , delta     :: MultiMap (q, s) (Maybe q)
   } deriving (Show)
 
+instance (Show k, Show v) => Show (MultiMap k v) where
+  show = show . toList
+
 -- Checks if the automaton is deterministic (only one transition for each state and each input symbol)
-isDFA :: Automaton a b -> Bool
-isDFA = undefined
+isDFA :: Eq a => Automaton a b -> Bool
+isDFA a =
+  numKeys (delta a) == numValues (delta a) &&
+  notElem (epsilon a) (Prelude.fmap snd $ keys (delta a))
 
 -- Checks if the automaton is nondeterministic (eps-transition or multiple transitions for a state and a symbol)
-isNFA :: Automaton a b -> Bool
-isNFA = undefined
+isNFA :: Eq a => Automaton a b -> Bool
+isNFA a = not $ isDFA a
 
 -- Checks if the automaton is complete (there exists a transition for each state and each input symbol)
 isComplete :: Automaton a b -> Bool
-isComplete = undefined
+isComplete a =
+  numKeys (delta a) ==
+  fromIntegral ((Set.size (sigma a)) * (Set.size (states a)))
 
 -- Checks if the automaton is minimal (only for DFAs: the number of states is minimal)
 isMinimal :: Automaton a b -> Bool
@@ -91,7 +98,8 @@ parserAutomaton = do
       (Set.fromList states)
       (head inits)
       (Set.fromList terms)
-      (Maps.fromList delts)
+      ("EPS")
+      (fromList delts)
 
 -- Top level function: parses input string, checks that it is an automaton, and then returns it.
 -- Should return Nothing, if there is a syntax error or the automaton is not a correct automaton.
@@ -124,3 +132,37 @@ test4 = parseAutomaton "<aa, bb, cc> <stone, sttwo> <stone> <> <>"
 test6 =
   parseAutomaton
     "<0, 1> <A, B, C, D, E, F, G> <A> <F, G> <(A, 0, C), (A, 1, B), (B, 0, C), (B, 1, A), (C, 0, D), (C, 1, D), (D, 0, E), (D, 1, F), (E, 0, F), (E, 1, G), (F, 0, F), (F, 1, F), (G, 0, G), (G, 1, F)>"
+
+test_DFA_TRUE =
+  isDFA $
+  fromJust $
+  parseAutomaton
+    "<0, 1> <A, B, C, D, E, F, G> <A> <F, G> <(A, 0, C), (A, 1, B), (B, 0, C), (B, 1, A), (C, 0, D), (C, 1, D), (D, 0, E), (D, 1, F), (E, 0, F), (E, 1, G), (F, 0, F), (F, 1, F), (G, 0, G), (G, 1, F)>"
+
+test_DFA_FALSE_MULTI =
+  isDFA $
+  fromJust $
+  parseAutomaton
+    "<0, 1> <A, B, C, D, E, F, G> <A> <F, G> <(A, 0, C), (A, 1, B), (B, 0, C), (B, 1, A), (C, 0, D), (C, 1, D), (C, 0, E), (D, 1, F), (E, 0, F), (E, 1, G), (F, 0, F), (F, 1, F), (G, 0, G), (G, 1, F)>"
+
+test_DFA_FALSE_EPS =
+  isDFA $
+  fromJust $
+  parseAutomaton
+    "<0, 1, EPS> <A, B, C, D, E, F, G> <A> <F, G> <(A, 0, C), (A, 1, B), (B, 0, C), (B, 1, A), (C, 0, D), (C, 1, D), (D, EPS, E), (D, 1, F), (E, 0, F), (E, 1, G), (F, 0, F), (F, 1, F), (G, 0, G), (G, 1, F)>"
+
+test_IS_COMPLETE_FALSE =
+  isComplete $
+  fromJust $ parseAutomaton "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(2,b,3),(3,c,1)>"
+
+test_IS_COMPLETE_TRUE =
+  isComplete $
+  fromJust
+    $parseAutomaton
+    "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(1,b,2),(1,c,2),   (2,a,3),(2,b,3),(2,c,3),    (3,a,1),(3,b,1),(3,c,1)>"
+
+test_IS_COMPLETE_TRUE_MULTI =
+  isComplete $
+  fromJust
+    $parseAutomaton
+    "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(1,b,2),(1,c,2),(1,c,3),   (2,a,3),(2,b,3),(2,c,3),    (3,a,1),(3,b,1),(3,c,1)>"
