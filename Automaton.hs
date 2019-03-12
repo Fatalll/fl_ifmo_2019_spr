@@ -30,7 +30,7 @@ isDFA a =
 
 -- Checks if the automaton is nondeterministic (eps-transition or multiple transitions for a state and a symbol)
 isNFA :: Eq a => Automaton a b -> Bool
-isNFA a = not $ isDFA a
+isNFA a = True
 
 -- Checks if the automaton is complete (there exists a transition for each state and each input symbol)
 isComplete :: Automaton a b -> Bool
@@ -109,11 +109,15 @@ parserAutomaton = do
 -- * Any of the terminal states is not a state
 -- * Delta function is defined on not-a-state or not-a-symbol-from-sigma
 -- Pick appropriate types for s and q
-parseAutomaton :: String -> Maybe (Automaton String String)
+parseAutomaton :: String -> Either String (Automaton String String)
 parseAutomaton input =
   case runParser parserAutomaton (stream input) of
-    Left e       -> Nothing
-    Right (_, a) -> Just a
+    Left e       -> Left e
+    Right (_, a) -> Right a
+
+fromEither :: Either a b -> b
+fromEither (Left _) = undefined
+fromEither (Right b) = b
 
 test = parseAutomaton "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(2,b,3),(3,c,1)>"
 
@@ -135,34 +139,34 @@ test6 =
 
 test_DFA_TRUE =
   isDFA $
-  fromJust $
+  fromEither $
   parseAutomaton
     "<0, 1> <A, B, C, D, E, F, G> <A> <F, G> <(A, 0, C), (A, 1, B), (B, 0, C), (B, 1, A), (C, 0, D), (C, 1, D), (D, 0, E), (D, 1, F), (E, 0, F), (E, 1, G), (F, 0, F), (F, 1, F), (G, 0, G), (G, 1, F)>"
 
 test_DFA_FALSE_MULTI =
   isDFA $
-  fromJust $
+  fromEither $
   parseAutomaton
     "<0, 1> <A, B, C, D, E, F, G> <A> <F, G> <(A, 0, C), (A, 1, B), (B, 0, C), (B, 1, A), (C, 0, D), (C, 1, D), (C, 0, E), (D, 1, F), (E, 0, F), (E, 1, G), (F, 0, F), (F, 1, F), (G, 0, G), (G, 1, F)>"
 
 test_DFA_FALSE_EPS =
   isDFA $
-  fromJust $
+  fromEither $
   parseAutomaton
     "<0, 1, EPS> <A, B, C, D, E, F, G> <A> <F, G> <(A, 0, C), (A, 1, B), (B, 0, C), (B, 1, A), (C, 0, D), (C, 1, D), (D, EPS, E), (D, 1, F), (E, 0, F), (E, 1, G), (F, 0, F), (F, 1, F), (G, 0, G), (G, 1, F)>"
 
 test_IS_COMPLETE_FALSE =
   isComplete $
-  fromJust $ parseAutomaton "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(2,b,3),(3,c,1)>"
+  fromEither $ parseAutomaton "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(2,b,3),(3,c,1)>"
 
 test_IS_COMPLETE_TRUE =
   isComplete $
-  fromJust
+  fromEither
     $parseAutomaton
     "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(1,b,2),(1,c,2),   (2,a,3),(2,b,3),(2,c,3),    (3,a,1),(3,b,1),(3,c,1)>"
 
 test_IS_COMPLETE_TRUE_MULTI =
   isComplete $
-  fromJust
+  fromEither
     $parseAutomaton
     "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(1,b,2),(1,c,2),(1,c,3),   (2,a,3),(2,b,3),(2,c,3),    (3,a,1),(3,b,1),(3,c,1)>"
