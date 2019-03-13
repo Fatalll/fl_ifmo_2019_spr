@@ -162,7 +162,7 @@ stringEof =
   Parser $ \s ->
     case s of
       (streamS -> (Nothing, str)) -> Right (str, '\0')
-      (streamS -> (Nothing, str)) ->
+      (streamS -> (_, str)) ->
         Left $ (show $ len str - still str) ++ " pos, Not the end of string!\n"
 
 zeroOne :: Eq token => token -> Parser token err token
