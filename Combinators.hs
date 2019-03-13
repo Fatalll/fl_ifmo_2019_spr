@@ -3,8 +3,9 @@
 
 module Combinators where
 
+import qualified Control.Monad.Fail as Fail
 import           Data.Char
-import           Prelude   hiding (fail, fmap, (<*>), (>>=))
+import           Prelude            hiding (fail, fmap, (<*>), (>>=))
 import qualified Prelude
 
 -- Parsing result is either an error message or some payload and a suffix of the input which is yet to be parsed
@@ -58,13 +59,16 @@ instance Monad (Parser s String) where
   (>>=) = (>>=)
   fail = fail
 
+instance Fail.MonadFail (Parser s String) where
+  fail = fail
+
 -- Parser which always succeedes consuming no input
 success :: ok -> Parser str err ok
 success ok = Parser $ \s -> Right (s, ok)
 
 -- Parser which fails no mater the input
 fail :: err -> Parser str err ok
-fail err = Parser $ \s -> Left err
+fail err = Parser $ \_ -> Left err
 
 -- Biased choice: if the first parser succeedes, the second is never run
 (<|>) ::

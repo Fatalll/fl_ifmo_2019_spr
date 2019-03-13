@@ -1,12 +1,12 @@
 module Automaton where
 
 import           Data.Char
-import           Data.Maybe
-import           Data.MultiMap (MultiMap, fromList, keys, numKeys, numValues,
-                                toList)
+import           Data.MultiMap (MultiMap, fromList, insert, keys, lookup,
+                                numKeys, numValues, toList)
 import qualified Data.Set      as Set
 
 import           Combinators
+import           Control.Monad.State.Lazy
 
 type Set = Set.Set
 
@@ -30,7 +30,7 @@ isDFA a =
 
 -- Checks if the automaton is nondeterministic (eps-transition or multiple transitions for a state and a symbol)
 isNFA :: Eq a => Automaton a b -> Bool
-isNFA a = True
+isNFA _ = True
 
 -- Checks if the automaton is complete (there exists a transition for each state and each input symbol)
 isComplete :: Automaton a b -> Bool
@@ -42,6 +42,18 @@ isComplete a =
 isMinimal :: Automaton a b -> Bool
 isMinimal = undefined
 
+transformToCompleteDeterministic :: (Ord a, Ord b) => Automaton a b -> Automaton a b
+transformToCompleteDeterministic a = if isDFA a then Automaton (sigma a) (states a) (initState a) (termState a) (epsilon a)
+  (foldr (\d ds -> if Data.MultiMap.lookup d ds == [] then Data.MultiMap.insert d Nothing ds else ds)
+   (delta a) [(state, sig) | state <- Set.elems $ states a, sig <- Set.elems $ sigma a]) else error "Not Deterministic Automaton"
+
+determinize :: (Ord a, Ord b) => Automaton a b -> Automaton a b
+determinize a = if elem (epsilon a) (Prelude.fmap snd $ keys (delta a)) then error "Found an epsilon-transition"
+  else if isDFA a then a else determinize' $ transformToCompleteDeterministic a where
+    determinize' a = do
+      queue <- Data.Sequence.fromList [initState a]
+
+parserAutomaton :: Parser Char String (Automaton [Char] [Char])
 parserAutomaton = do
   let skipSpaces = many $ satisfy isSpace
   alphabet <-
@@ -116,7 +128,7 @@ parseAutomaton input =
     Right (_, a) -> Right a
 
 fromEither :: Either a b -> b
-fromEither (Left _) = undefined
+fromEither (Left _)  = undefined
 fromEither (Right b) = b
 
 test = parseAutomaton "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(2,b,3),(3,c,1)>"
@@ -170,3 +182,5 @@ test_IS_COMPLETE_TRUE_MULTI =
   fromEither
     $parseAutomaton
     "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(1,b,2),(1,c,2),(1,c,3),   (2,a,3),(2,b,3),(2,c,3),    (3,a,1),(3,b,1),(3,c,1)>"
+
+testTransformToCompleteDeterministic = isComplete $ transformToCompleteDeterministic $ fromEither test3
