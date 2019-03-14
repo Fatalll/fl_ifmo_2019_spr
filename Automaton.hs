@@ -1,14 +1,20 @@
+{-# LANGUAGE TypeSynonymInstances #-}
+
 module Automaton where
 
 import           Data.Char
-import           Data.MultiMap (MultiMap, fromList, insert, keys, lookup,
-                                numKeys, numValues, toList)
-import qualified Data.Set      as Set
+import           Data.Maybe
+import           Data.List
+import qualified Data.MultiMap            as MultiMap
+import qualified Data.Set                 as Set
+import qualified Data.Map                 as Map
 
 import           Combinators
 import           Control.Monad.State.Lazy
 
 type Set = Set.Set
+type Map = Map.Map
+type MultiMap = MultiMap.MultiMap
 
 data Automaton s q = Automaton
   { sigma     :: Set s
@@ -20,13 +26,13 @@ data Automaton s q = Automaton
   } deriving (Show)
 
 instance (Show k, Show v) => Show (MultiMap k v) where
-  show = show . toList
+  show = show . MultiMap.toList
 
 -- Checks if the automaton is deterministic (only one transition for each state and each input symbol)
 isDFA :: Eq a => Automaton a b -> Bool
 isDFA a =
-  numKeys (delta a) == numValues (delta a) &&
-  notElem (epsilon a) (Prelude.fmap snd $ keys (delta a))
+  MultiMap.numKeys (delta a) == MultiMap.numValues (delta a) &&
+  notElem (epsilon a) (Prelude.fmap snd $ MultiMap.keys (delta a))
 
 -- Checks if the automaton is nondeterministic (eps-transition or multiple transitions for a state and a symbol)
 isNFA :: Eq a => Automaton a b -> Bool
@@ -35,30 +41,118 @@ isNFA _ = True
 -- Checks if the automaton is complete (there exists a transition for each state and each input symbol)
 isComplete :: Eq a => Automaton a b -> Bool
 isComplete a =
-  (isDFA a) && numKeys (delta a) ==
+  (isDFA a) &&
+  MultiMap.numKeys (delta a) ==
   fromIntegral ((Set.size (sigma a)) * (Set.size (states a)))
 
 -- Checks if the automaton is minimal (only for DFAs: the number of states is minimal)
 isMinimal :: Automaton a b -> Bool
 isMinimal = undefined
 
-transformToCompleteDeterministic :: (Ord a, Ord b) => Automaton a b -> Automaton a b
-transformToCompleteDeterministic a = if isDFA a then Automaton (sigma a) (states a) (initState a) (termState a) (epsilon a)
-  (foldr (\d ds -> if Data.MultiMap.lookup d ds == [] then Data.MultiMap.insert d Nothing ds else ds)
-   (delta a) [(state, sig) | state <- Set.elems $ states a, sig <- Set.elems $ sigma a]) else error "Not Deterministic Automaton"
+transformToCompleteDeterministic ::
+     (Ord a, Ord b) => Automaton a b -> Automaton a b
+transformToCompleteDeterministic a =
+  if isDFA a
+    then Automaton
+           (sigma a)
+           (states a)
+           (initState a)
+           (termState a)
+           (epsilon a)
+           (foldr
+              (\d ds ->
+                 if MultiMap.lookup d ds == []
+                   then MultiMap.insert d Nothing ds
+                   else ds)
+              (delta a)
+              [ (state, sig)
+              | state <- Set.elems $ states a
+              , sig <- Set.elems $ sigma a
+              ])
+    else error "Not Deterministic Automaton"
 
-determinize :: (Ord a, Ord b) => Automaton a b -> Automaton a b
-determinize a = if elem (epsilon a) (Prelude.fmap snd $ keys (delta a)) then error "Found an epsilon-transition"
-  else if isDFA a then a else determinize' $ transformToCompleteDeterministic a where
-    determinize' a = do
-      queue <- Data.Sequence.fromList [initState a]
+data DeterminizeState s q = DeterminizeState
+  { queue        :: Set q
+  , newStates    :: Set q
+  , newTerminals :: Set q
+  , newDeltas    :: MultiMap (q, s) (Maybe q)
+  }
+
+determinize :: Automaton String String -> Automaton String String
+determinize a =
+  if elem (epsilon a) (Prelude.fmap snd $ MultiMap.keys (delta a))
+    then error "Found an epsilon-transition"
+    else if isDFA a
+           then a
+           else determinize' a
+  where
+    determinize' a =
+      evalState (determinize'' a) $
+      DeterminizeState
+        (Set.fromList [[initState a]])
+        Set.empty
+        Set.empty
+        MultiMap.empty
+      where
+        determinize'' :: Automaton String String
+          -> State (DeterminizeState String [String]) (Automaton String String)
+        determinize'' a = do
+          queue' <- gets queue
+          if null queue'
+            then do
+              sts <- gets newStates
+              trms <- gets newTerminals
+              dlts <- gets newDeltas
+              return $
+                 Automaton
+                   (sigma a)
+                   (Set.map (intercalate ",") sts)
+                   (initState a)
+                   (Set.map (intercalate ",") trms)
+                   (epsilon a)
+                   (MultiMap.map (\x -> case x of 
+                                          Just v -> Just (intercalate "," v) 
+                                          _ -> Nothing) $ (MultiMap.mapKeys (\(xs, s) -> ((intercalate "," xs), s)) dlts))
+            else do
+              let sts = sort $ Set.elemAt 0 queue'
+              modify (\s -> s {queue = Set.deleteAt 0 (queue s), newStates = Set.insert sts (newStates s)})
+
+              when (any (\v -> Set.member v (termState a)) sts) $ modify (\s -> s {newTerminals = Set.insert sts (newTerminals s)})
+
+              let outst = sort $ nub $ [end | ((begin, _), Just end) <- MultiMap.toList (delta a), elem begin sts]
+              let outc = nub $ [c | ((begin, c), _) <- MultiMap.toList (delta a), elem begin sts]
+
+              newsts <- gets newStates
+              when (Set.notMember outst newsts && outst /= []) $ modify (\s -> s {queue = Set.insert outst (queue s) })
+
+              modify (\s -> s {newDeltas = foldr (\c m-> MultiMap.insert (sts, c) (Just outst) m) (newDeltas s) outc})
+
+              determinize'' a
+
+epsilonClosure:: Automaton String String -> Automaton String String
+epsilonClosure a = if notElem (epsilon a) (Prelude.fmap snd $ MultiMap.keys (delta a)) then a else
+  let epsilons = [(begin, end) | ((begin, c), Just end) <- MultiMap.toList (delta a), c == epsilon a] in
+  Automaton
+    (sigma a)
+    (foldr (\(_, end) s -> if notElem end [e | ((_, c), Just e) <- MultiMap.toList (delta a), c /= epsilon a] then Set.delete end s else s) (states a) epsilons)
+    (initState a)
+    (foldr (\(begin, end) s -> if Set.member end (termState a) then 
+                                  if notElem end [e | ((_, c), Just e) <- MultiMap.toList (delta a), c /= epsilon a] then Set.delete end $ Set.insert begin s else Set.insert begin s
+                               else s) (termState a) epsilons)
+    (epsilon a)
+    (foldr (\(begin, end) d -> foldr (\k m -> MultiMap.delete k m)
+      (foldr (\(k, v) m -> MultiMap.insert k v m) d [((begin, c), Just e) | ((b, c), Just e) <- MultiMap.toList (delta a), b == end])
+      [(b, c) | ((b, c), Just e) <- MultiMap.toList (delta a), c == epsilon a || notElem b [e | ((_, c), Just e) <- MultiMap.toList (delta a), c /= epsilon a]]
+    ) (delta a) epsilons)
 
 parserAutomaton :: Parser Char String (Automaton [Char] [Char])
 parserAutomaton = do
   let skipSpaces = many $ satisfy isSpace
   alphabet <-
     parseList
-      (many ((satisfy isLetter) <|> (satisfy isDigit) <|> (char '_') <|> (char '\\')))
+      (many
+         ((satisfy isLetter) <|> (satisfy isDigit) <|> (char '_') <|>
+          (char '\\')))
       (char ',')
       (char '<')
       (char '>')
@@ -91,7 +185,9 @@ parserAutomaton = do
   let triplets = do
         [begin, sigma, end] <-
           parseList
-            (many ((satisfy isLetter) <|> (satisfy isDigit) <|> (char '_') <|> (char '\\')))
+            (many
+               ((satisfy isLetter) <|> (satisfy isDigit) <|> (char '_') <|>
+                (char '\\')))
             (char ',')
             (char '(')
             (char ')')
@@ -113,7 +209,7 @@ parserAutomaton = do
       (head inits)
       (Set.fromList terms)
       ("\\epsilon")
-      (fromList delts)
+      (MultiMap.fromList delts)
 
 -- Top level function: parses input string, checks that it is an automaton, and then returns it.
 -- Should return Nothing, if there is a syntax error or the automaton is not a correct automaton.
@@ -145,7 +241,9 @@ test3 =
   parseAutomaton
     "<aa, bb, cc> <stone, sttwo> <stone> <sttwo> <(stone, cc, sttwo), (sttwo, bb, stone)>"
 
-test4 = parseAutomaton "<aa> <stone, sttwo> <stone> <sttwo> <(stone, \\epsilon, sttwo)>"
+test4 =
+  parseAutomaton
+    "<aa> <stone, sttwo> <stone> <sttwo> <(stone, \\epsilon, sttwo)>"
 
 test6 =
   parseAutomaton
@@ -185,4 +283,11 @@ test_IS_COMPLETE_TRUE_MULTI =
     $parseAutomaton
     "<a,b,c> <1,2,3> <1> <3> <(1,a,2),(1,b,2),(1,c,2),(1,c,3),   (2,a,3),(2,b,3),(2,c,3),    (3,a,1),(3,b,1),(3,c,1)>"
 
-testTransformToCompleteDeterministic = isComplete $ transformToCompleteDeterministic $ fromEither test3
+testTransformToCompleteDeterministic =
+  isComplete $ transformToCompleteDeterministic $ fromEither test3
+
+testNFAtoDFA = parseAutomaton "<a,b,c> <1,2,3> <1> <3> <(1,c,2),(1,c,3),   (2,a,3),(2,b,3),(2,c,3),    (3,a,1),(3,b,1),(3,c,1)>"
+
+testEpsilonClosure1 = parseAutomaton "<a,b,c> <1,2,3> <1> <3> <(1,\\epsilon,2),(2,a,3)>"
+testEpsilonClosure2 = parseAutomaton "<a,b,c> <1,2,3,4> <1> <3> <(1,\\epsilon,2),(2,a,3),(4,b,2)>"
+testEpsilonClosure3 = parseAutomaton "<a,b,c> <1,2> <1> <2> <(1,\\epsilon,2)>"
