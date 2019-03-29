@@ -1,4 +1,6 @@
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ViewPatterns      #-}
 
 module Automaton where
 
@@ -24,6 +26,7 @@ data Automaton s q = Automaton
   , initState :: q
   , termState :: Set q
   , epsilon   :: s
+  , devil     :: q
   , delta     :: MultiMap (q, s) (Maybe q)
   } deriving (Show, Eq)
 
@@ -52,7 +55,11 @@ isComplete a =
 
 -- Checks if the automaton is minimal (only for DFAs: the number of states is minimal)
 isMinimal :: Automaton String String -> Bool
-isMinimal a = (minimize a) == a
+isMinimal a = (minimize a) == removeUnreachable (if not $ isDFA a
+   then error "Non determenistic"
+   else if isComplete a
+          then a
+          else transformToCompleteDeterministic a)
 
 transformToCompleteDeterministic ::
      (Ord a, Ord b) => Automaton a b -> Automaton a b
@@ -64,10 +71,11 @@ transformToCompleteDeterministic a =
            (initState a)
            (termState a)
            (epsilon a)
+           (devil a)
            (foldr
               (\d ds ->
                  if MultiMap.lookup d ds == []
-                   then MultiMap.insert d Nothing ds
+                   then MultiMap.insert d (Just $ devil a) ds
                    else ds)
               (delta a)
               [ (state, sig)
@@ -116,11 +124,12 @@ determinize a =
                   (initState a)
                   (Set.map (intercalate ",") trms)
                   (epsilon a)
+                  (devil a)
                   (MultiMap.map
                      (\x ->
                         case x of
                           Just v -> Just (intercalate "," v)
-                          _      -> Nothing) $
+                          _      -> Just $ devil a) $
                    (MultiMap.mapKeys
                       (\(xs, s) -> ((intercalate "," xs), s))
                       dlts))
@@ -201,6 +210,7 @@ epsilonClosure a =
                   (termState a)
                   epsilons)
                (epsilon a)
+               (devil a)
                (foldr
                   (\(begin, end) d ->
                      foldr
@@ -259,6 +269,7 @@ removeUnreachable a =
            (termState a)
            (Set.toList $ termState a))
         (epsilon a)
+        (devil a)
         (foldr
            (\k m -> MultiMap.delete k m)
            (delta a)
@@ -274,7 +285,7 @@ data MinimizeState q = MinimizeState
 
 minimize :: Automaton String String -> Automaton String String
 minimize a =
-  minimize' $
+  minimize' $ 
   removeUnreachable
     (if not $ isDFA a
        then error "Non determenistic"
@@ -282,10 +293,10 @@ minimize a =
               then a
               else transformToCompleteDeterministic a)
   where
-    reverseMapping =
+    reverseMapping a' =
       MultiMap.fromList
         [ ((end, sigma), begin)
-        | ((begin, sigma), Just end) <- MultiMap.toList (delta a)
+        | ((begin, sigma), Just end) <- MultiMap.toList (delta a')
         ]
     minimize' a =
       evalState (minimize'' a) $
@@ -294,15 +305,13 @@ minimize a =
            [ (x, y)
            | x <- (Set.toList $ states a)
            , y <- (Set.toList $ termState a)
-           , x /= y
-           , not (elem x (termState a) && elem y (termState a))
+           , notElem x (termState a)
            ])
         (Set.fromList
            [ (x, y)
            | x <- (Set.toList $ states a)
            , y <- (Set.toList $ termState a)
-           , x /= y
-           , not (elem x (termState a) && elem y (termState a))
+           , notElem x (termState a)
            ])
       where
         minimize'' ::
@@ -331,6 +340,7 @@ minimize a =
                      (intercalate ",")
                      [x | x <- result, any (\x' -> elem x' (termState a)) x])
                   (epsilon a)
+                  (devil a)
                   (MultiMap.fromList
                      [ (((intercalate "," x), y), Just (intercalate "," z))
                      | x <- result
@@ -350,13 +360,13 @@ minimize a =
               let (x, y) = Set.elemAt 0 queue''
               table' <- gets table
               let newPairs =
-                    [ (f, s)
+                    [ (if f < s then (f, s) else (s, f))
                     | (x', y') <-
                         [((x, s'), (y, s')) | s' <- Set.toList $ sigma a]
-                    , f <- MultiMap.lookup x' reverseMapping
-                    , s <- MultiMap.lookup y' reverseMapping
-                    , f < s
-                    , not $ Set.member (f, s) table'
+                    , f <- MultiMap.lookup x' $ reverseMapping a
+                    , s <- MultiMap.lookup y' $ reverseMapping a
+                    , f /= s
+                    , not $ Set.member (if f < s then (f, s) else (s, f)) table'
                     ]
               modify
                 (\s ->
@@ -366,8 +376,7 @@ minimize a =
                            (Set.deleteAt 0 (queue' s))
                            (Set.fromList newPairs)
                      })
-              modify
-                (\s -> s {table = Set.union (table s) (Set.fromList newPairs)})
+              modify (\s -> s {table = Set.union (table s) (Set.fromList newPairs)})
               minimize'' a
 
 parserAutomaton :: Parser Char String (Automaton [Char] [Char])
@@ -418,7 +427,7 @@ parserAutomaton = do
             (char ')')
             (== 3)
         if elem begin states
-          then if elem end states
+          then if elem end ("\\devil" : states)
                  then if elem sigma ("\\epsilon" : alphabet)
                         then return ((begin, sigma), Just end)
                         else Combinators.fail $
@@ -431,10 +440,11 @@ parserAutomaton = do
   return $
     Automaton
       (Set.fromList alphabet)
-      (Set.fromList states)
+      (Set.fromList $ "\\devil" : states)
       (head inits)
       (Set.fromList terms)
       ("\\epsilon")
+      ("\\devil")
       (MultiMap.fromList delts)
 
 -- Top level function: parses input string, checks that it is an automaton, and then returns it.
@@ -531,6 +541,8 @@ testMinimization =
     "<0,1> <A,B,C,D,E,F,G> <A> <F,G> <(A,0,C),(A,1,B),(B,1,A),(B,0,C),(C,0,D),(C,1,D),(D,0,E),(D,1,F),(E,0,F),(E,1,G),(F,0,F),(F,1,F),(G,0,G),(G,1,F)>"
 
 testIsMinimalTrue = isMinimal $ fromEither $ test3
+
+testIsMinimalTrue2 = isMinimal $ fromEither $ parseAutomaton "<a,b,c,d> <0,1,2,3,4,5> <0> <3,4,5> <(0, a, 1), (0, b, 2), (0, d, 2), (0, c, 3), (1, a, 4), (2, b, 4), (2, a, 5), (3, a, 4), (5, a, 5)>"
 
 testIsMinimalFalse =
   isMinimal $
