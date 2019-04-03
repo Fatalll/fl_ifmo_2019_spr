@@ -47,11 +47,11 @@ isNFA :: Eq a => Automaton a b -> Bool
 isNFA _ = True
 
 -- Checks if the automaton is complete (there exists a transition for each state and each input symbol)
-isComplete :: Eq a => Automaton a b -> Bool
+isComplete :: Eq a => Automaton a String -> Bool
 isComplete a =
   (isDFA a) &&
   MultiMap.numKeys (delta a) ==
-  fromIntegral ((Set.size (sigma a)) * (Set.size (states a)))
+  fromIntegral ((Set.size (sigma a)) * (Set.size (Set.delete "\\devil" (states a))))
 
 -- Checks if the automaton is minimal (only for DFAs: the number of states is minimal)
 isMinimal :: Automaton String String -> Bool
