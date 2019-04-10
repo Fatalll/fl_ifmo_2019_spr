@@ -137,7 +137,7 @@ token t =
     case s of
       (streamS -> (Just t', str))
         | t == t' -> Right (str, t)
-        | otherwise -> Left $ [ (show $ len str - still str) ++ " pos, " ++ (show t') ++ " is not a token!" ] <> errs
+        | otherwise -> Left $ [ (show $ len str - still str) ++ " pos, " ++ (show t') ++ " is not a token " ++ (show t) ++ "!"  ] <> errs
       _ -> Left $ ["Empty input!"] <> errs
 
 -- Checks if the first character of the string is the one given
@@ -167,41 +167,48 @@ eof = Parser $ \s@(Stream _ _ _ errs) ->
 expression :: [(Assoc, [(Parser Char String b, a -> a -> a)])] -> 
               Parser Char String a ->
               Parser Char String a
-expression ((ass, (fp, fo) : aops) : ops) primary = case ass of
-  LAssoc -> do
-    f <- spaces *> next
-    s <- many $ do
-      o <- tp
-      s' <- next
-      return (o, s')
+expression ((ass, (fp, fo) : aops) : ops) primary = 
+  let r = 
+        case ass of
+          LAssoc -> do
+            f <- spaces *> next
+            s <- many $ do
+              o <- spaces *> tp
+              s' <- next
+              return (o, s')
 
-    return $ foldl (\f' (o, expr) -> o f' expr) f s
+            return $ foldl (\f' (o, expr) -> o f' expr) f s
 
-  RAssoc -> do
-    f <- spaces *> next
-    s <- many $ do
-      o <- tp
-      s' <- next
-      return (o, s')
-
-    return $ snd $ foldr1 (\ (c, f') (o, s') -> (c, o f' s')) ((const, f) : s)
-    
-  NAssoc -> do
-    f <- spaces *> next
-    s <- try $ do
-      spaces
-      sign <- tp
-      spaces
-      s' <- next
-      return $ sign f s'
-    
-    case s of
-      Nothing -> return f
-      Just v -> return v
-
+          RAssoc -> do
+            f <- spaces *> next
+            s <- many $ do
+              o <- spaces *> tp
+              s' <- next
+              return (o, s')
+            return $ snd $ foldr1 (\ (c, f') (o, s') -> (c, o f' s')) ((const, f) : s)
+            
+          NAssoc -> do
+            f <- spaces *> next
+            s <- try $ do
+              spaces
+              sign <- tp
+              spaces
+              s' <- next
+              return $ sign f s'
+            
+            case s of
+              Nothing -> return f
+              Just v -> return v
+  in r <|> do
+    spaces
+    char '('
+    f <- spaces *> r
+    spaces
+    char ')'
+    return f
   where next = expression ops primary
         tp = foldr (\(p, o) r -> (p *> pure o) <|> r) (fp *> pure fo) aops
-expression _ primary = primary
+expression _ primary =  primary
 
 
 -- runParserUntilEof :: Foldable t => Parser (t str) String ok -> (t str) -> Either [String] ok 

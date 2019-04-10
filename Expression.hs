@@ -78,7 +78,7 @@ instance Show Operator where
 
 specification =
   [
-    (LAssoc, [ (string "||", BinOp Disj) ]),
+    (RAssoc, [ (string "||", BinOp Disj) ]),
     (RAssoc, [ (string "&&", BinOp Conj) ]),
     (NAssoc, [ (string "==", BinOp Eq), (string "/=", BinOp Neq), (string "<=", BinOp Le), (string ">=", BinOp Ge), (string "<", BinOp Lt), (string ">", BinOp Gt) ]),
     (LAssoc, [ (string "+", BinOp Sum), (string "-", BinOp Minus) ]),
@@ -88,7 +88,7 @@ specification =
 
 calcSpecification =
   [
-    (LAssoc, [ (string "||", (\f s -> if f /= 0 || s /= 0 then 1 else 0)) ]),
+    (RAssoc, [ (string "||", (\f s -> if f /= 0 || s /= 0 then 1 else 0)) ]),
     (RAssoc, [ (string "&&", (\f s -> if f /= 0 && s /= 0 then 1 else 0)) ]),
     (NAssoc, [ (string "==", (\f s -> if f == s then 1 else 0)),
                (string "/=", (\f s -> if f /= s then 1 else 0)),
@@ -110,3 +110,8 @@ instance Show a => Show (EAst a) where
                   BinOp op l r -> printf "%s\n%s\n%s" (show op) (show' (ident n) l) (show' (ident n) r)
                   Primary x -> show x)
       ident = (+1)
+
+test1 = executeExpression "22 > 3"
+test2 = executeExpression "2 + 2 * 2"
+test3 = executeExpression "2^2^3"
+test4 = executeExpression "3 > 2 && 5 < 7"
