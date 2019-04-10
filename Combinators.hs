@@ -167,8 +167,9 @@ eof = Parser $ \s@(Stream _ _ _ errs) ->
 expression :: [(Assoc, [(Parser Char String b, a -> a -> a)])] -> 
               Parser Char String a ->
               Parser Char String a
-expression ((ass, (fp, fo) : aops) : ops) primary = 
-  let r = 
+expression opts primary = expr''
+  where 
+      expr' ((ass, (fp, fo) : aops) : ops) primary = 
         case ass of
           LAssoc -> do
             f <- spaces *> next
@@ -199,17 +200,19 @@ expression ((ass, (fp, fo) : aops) : ops) primary =
             case s of
               Nothing -> return f
               Just v -> return v
-  in r <|> do
-    spaces
-    char '('
-    f <- spaces *> r
-    spaces
-    char ')'
-    return f
-  where next = expression ops primary
-        tp = foldr (\(p, o) r -> (p *> pure o) <|> r) (fp *> pure fo) aops
-expression _ primary =  primary
+        where next = expr' ops primary
+              tp = foldr (\(p, o) r -> (p *> pure o) <|> r) (fp *> pure fo) aops
 
+      expr' _ primary = primary <|> do
+        spaces
+        char '('
+        f <- spaces *> expr' opts primary
+        spaces
+        char ')'
+        return f
+
+      expr'' = expr' opts primary
+              
 
 -- runParserUntilEof :: Foldable t => Parser (t str) String ok -> (t str) -> Either [String] ok 
 -- runParserUntilEof p inp = 
