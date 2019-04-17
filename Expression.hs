@@ -160,3 +160,5 @@ instance Show a => Show (EAst a) where
 test1 = parseExpression "1+3+4 >= 5 - 7 -10"
 test2 = parseExpression "(10)^(1+2)^(5+5) > 3 && 1/2/3/4/5 <= 0"
 test3 = parseExpression "((((((((125 > 5)))))))) || ((5^3)) < 6"
+
+test_err = parseExpression "(10)^(1+2)^(5+5) > 3 && 1/2/3/4/5 <="
