@@ -51,14 +51,14 @@ parserUntilEof p = do
 -- Constructs AST for the input expression
 parseExpression :: String -> Either String (EAst Integer)
 parseExpression input = case runParser (parserUntilEof $ expression specification pnum) (stream input) of
-  Left e -> Left $ concat e
+  Left e -> Left $ "Can't parse expression"
   Right (_, a) -> Right a
 
 -- Change the signature if necessary
 -- Calculates the value of the input expression
 executeExpression :: String -> Either String Integer
 executeExpression input = case runParser (parserUntilEof $ expression calcSpecification calcPnum) (stream input) of
-  Left e -> Left $ concat e
+  Left e -> Left $ "Can't parse expression"
   Right (_, a) -> Right a
 
 instance Show Operator where
@@ -118,3 +118,4 @@ test4 = executeExpression "3 > 2 && 5 < 7"
 test5 = executeExpression "(2 + 2) * 2 ^ (3 - 1)"
 test6 = executeExpression "2^(3 >= 1)"
 test7 = executeExpression "(((((100)+5)-3)*2)/6)>5"
+test_err = executeExpression "(10)^(1+2)^(5+5) > 3 && 1/2/3/4/5 > 5 && 0 || 4 < < 3"

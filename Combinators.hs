@@ -123,9 +123,9 @@ satisfy f =
     case s of
       (streamS -> (Just t, str))
         | f t -> Right (str, t)
-        | otherwise -> Left $  [ (show $ len str - still str) ++ " pos, " ++ (show t) ++ " is not a token!" ] <> errs
+        | otherwise -> Left errs
       (streamS -> (Nothing, str)) ->
-        Left $ [(show $ len str - still str) ++ " pos, Empty input!"] <> errs
+        Left errs
 
 try :: Monoid err => Parser Char err a -> Parser Char err (Maybe a)
 try p = fmap Just p <|> success Nothing
@@ -137,8 +137,8 @@ token t =
     case s of
       (streamS -> (Just t', str))
         | t == t' -> Right (str, t)
-        | otherwise -> Left $ [ (show $ len str - still str) ++ " pos, " ++ (show t') ++ " is not a token " ++ (show t) ++ "!"  ] <> errs
-      _ -> Left $ ["Empty input!"] <> errs
+        | otherwise -> Left errs
+      _ -> Left errs
 
 -- Checks if the first character of the string is the one given
 char :: Char -> Parser Char String Char
