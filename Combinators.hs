@@ -46,6 +46,7 @@ instance Fail.MonadFail (Parser s String) where
 data Assoc = LAssoc -- left associativity
            | RAssoc -- right associativity
            | NAssoc -- not associative
+           | Unary  -- unary operators
 
 
 -- Parser which always succeedes consuming no input
@@ -147,6 +148,9 @@ char = token
 digit :: Parser Char String Char
 digit = satisfy (\c -> isDigit c && c /= '0')
 
+letter :: Parser Char String Char
+letter = satisfy isLetter
+
 string :: String -> Parser Char String String
 string = foldr (\a b -> pure (:) <*> char a <*> b) (pure [])
 
@@ -200,6 +204,19 @@ expression opts primary = expr''
             case s of
               Nothing -> return f
               Just v -> return v
+
+          Unary -> do
+            s <- try $ do
+              spaces
+              sign <- tp
+              spaces
+              s' <- next
+              return $ sign s' undefined
+            
+            case s of
+              Nothing -> next
+              Just v -> return v
+
         where next = expr' ops primary
               tp = foldr (\(p, o) r -> (p *> pure o) <|> r) (fp *> pure fo) aops
 

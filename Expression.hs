@@ -16,19 +16,30 @@ data Operator = Pow
               | Gt
               | Conj
               | Disj
+              | UMin
+              | UNot
 
 -- Simplest abstract syntax tree for expressions: only binops are allowed
 data EAst a = BinOp Operator (EAst a) (EAst a)
+            | Variable String
             | Primary a
 
-pnum = do
-  f <- spaces *> (digit <|> char '0')
+pnum = 
+  do
+    f <- spaces *> (digit <|> char '0')
 
-  case f of
-    '0' -> return $ Primary 0
-    _ -> do
-      s <- many $ (digit <|> char '0')
-      return $ Primary (read (f : s) :: Integer)  
+    case f of
+      '0' -> return $ Primary 0
+      _ -> do
+        s <- many $ (digit <|> char '0')
+        return $ Primary (read (f : s) :: Integer)
+  <|>
+  do
+    spaces
+    f <- (letter <|> char '_')
+    s <- many (letter <|> char '_' <|> digit)
+    return $ Variable (f : s)
+
 
 calcPnum = do
   f <- spaces *> (digit <|> char '0')
@@ -75,6 +86,8 @@ instance Show Operator where
   show Gt    = ">"
   show Conj  = "&&"
   show Disj  = "||"
+  show UMin  = "-"
+  show UNot  = "!"
 
 specification =
   [
@@ -83,7 +96,8 @@ specification =
     (NAssoc, [ (string "==", BinOp Eq), (string "/=", BinOp Neq), (string "<=", BinOp Le), (string ">=", BinOp Ge), (string "<", BinOp Lt), (string ">", BinOp Gt) ]),
     (LAssoc, [ (string "+", BinOp Sum), (string "-", BinOp Minus) ]),
     (LAssoc, [ (string "*", BinOp Mul), (string "/", BinOp Div) ]),
-    (RAssoc, [ (string "^", BinOp Pow) ])
+    (RAssoc, [ (string "^", BinOp Pow) ]),
+    (Unary, [ (string "!", BinOp UNot), (string "-", BinOp UMin) ])
   ]
 
 calcSpecification =
@@ -98,7 +112,8 @@ calcSpecification =
                (string ">",  (\f s -> if f > s then 1 else 0)) ]),
     (LAssoc, [ (string "+", (+)), (string "-", (-)) ]),
     (LAssoc, [ (string "*", (*)), (string "/", div) ]),
-    (RAssoc, [ (string "^", (^)) ])
+    (RAssoc, [ (string "^", (^)) ]),
+    (Unary, [ (string "-", (\f _ -> negate f)), (string "!", (\f _ -> if f == 0 then 1 else 0)) ])
   ]
 
 instance Show a => Show (EAst a) where
@@ -108,7 +123,8 @@ instance Show a => Show (EAst a) where
         (if n > 0 then printf "%s|_%s" (concat (replicate (n - 1) "| ")) else id)
         (case t of
                   BinOp op l r -> printf "%s\n%s\n%s" (show op) (show' (ident n) l) (show' (ident n) r)
-                  Primary x -> show x)
+                  Primary x -> show x
+                  Variable x -> show x)
       ident = (+1)
 
 test1 = executeExpression "22 > 3"
@@ -118,4 +134,8 @@ test4 = executeExpression "3 > 2 && 5 < 7"
 test5 = executeExpression "(2 + 2) * 2 ^ (3 - 1)"
 test6 = executeExpression "2^(3 >= 1)"
 test7 = executeExpression "(((((100)+5)-3)*2)/6)>5"
+test8 = executeExpression "-2 * 2"
+test9 = executeExpression "! (2 + 2 > 3)"
+test10 = parseExpression "abcd > _xcv123 * 34"
+test11 = parseExpression "1asd > 3"
 test_err = executeExpression "(10)^(1+2)^(5+5) > 3 && 1/2/3/4/5 > 5 && 0 || 4 < < 3"
